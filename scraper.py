@@ -195,6 +195,6 @@ while min_ix < max_ix:
         max_ix += incr
 
 # Write data to CSV
-with open(f"{pendulum.now().to_atom_string()}.csv", "w", newline="") as f:
+with open(f"output/{pendulum.now().to_atom_string()}.csv", "w", newline="") as f:
     writer = csv.writer(f)
     writer.writerows(output)
