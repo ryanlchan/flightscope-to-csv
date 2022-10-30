@@ -1,15 +1,15 @@
 [tool.poetry]
-name = "foresight-scraper"
+name = "flightscope-scraper"
 version = "0.1.0"
-description = "A scraper for myforesight.com data"
+description = "A scraper for myflightscope.com data"
 authors = ["Ryan Chan <ryan@ryanlchan.com>"]
 license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.8"
-pendulum = "^2.1.2"
-bs4 = "^0.0.1"
 cloudscraper = "^1.2.64"
+untangle = "^1.2.1"
+pendulum = "^2.1.2"
 
 [tool.poetry.dev-dependencies]
 
