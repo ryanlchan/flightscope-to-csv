@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "flightscope-scraper"
+name = "flightscope-to-csv"
 version = "0.1.0"
-description = "A scraper for myflightscope.com data"
+description = "Turn your myflightscope.com data into a CSV"
 authors = ["Ryan Chan <ryan@ryanlchan.com>"]
 license = "MIT"
 
