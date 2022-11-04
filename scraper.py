@@ -38,13 +38,13 @@ swing_param_dict = {
     "LANDINGVELOCITY3_PARAMETER_STRING": "Landing Speed Z (m/s)",
     "CLUBHEADSPEEDPOST_PARAMETER_STRING": "Club Post-Impact (m/s)",
     "RANGEBALL": "Range ball",
-    
+
     # FS Skills params
     "SHOTSCORE_PARAMETER_STRING": "Score",
     "TARGETINDEX_PARAMETER_STRING": "Target Index",
     "DISTANCE_FROM_TARGETLINE": "Distance from Target Line (m)",
-    "DISTANCE_FROM_PIN_CARRY": "Distance from Pin, Carry (m)",
-    "DISTANCE_FROM_PIN_TOTAL": "Distance from Pin, Total (m)",
+    "DISTANCE_FROM_PIN_CARRY": "Carry Distance from Pin (m)",
+    "DISTANCE_FROM_PIN_TOTAL": "Total Distance from Pin (m)",
 }
 
 club_type_dict = {
@@ -53,9 +53,20 @@ club_type_dict = {
     "3": "Wedge"
 }
 
+fs_skills_dict = {
+    "Diameter": "Target Diameter (m)",
+    "FairwayWidth": "Target Fairway Width (m)",
+    "ForwardDist": "Target Forward Dist (m)",
+    "LateralDist": "Target Lateral Dist (m)",
+    "ZoneSize1": "Target Zone 1 Size (m)",
+    "ZoneSize2": "Target Zone 2 Size (m)",
+    "ZoneSize3": "Target Zone 3 Size (m)",
+}
+
 default_output_headers = [
     "Session ID",
     "Session Name",
+    "Session Created"
     "Swing ID",
     "Club Name",
     "Shot",
@@ -64,33 +75,36 @@ default_output_headers = [
     "Smash",
     "Carry (m)",
     "Total (m)",
-    "Spin (rpm)",
+    "Backspin (rpm)",
     "Sidespin (rpm)",
     "Spin estimated",
     "Height (m)",
     "Time (s)",
     "AOA (*)",
     "Spin Loft (*)",
-    "Spin Axis (*)",
     "Lateral (m)",
     "Curve (m)",
     "Launch H(*)",
     "Launch V (*)",
     "Landing Angle (*)",
-    "Shape",
 ]
 
-fs_golf_headers = [
+fs_golf_headers = default_output_headers + [
+    "Spin Axis (*)",
+    "Shape",
     "Range ball",
     "Mode",
-].extend(default_output_headers)
-fs_skills_headers = [
+]
+fs_skills_headers = default_output_headers + [
+    "Template ID",
     "Score",
-    "Target",
+    "Target ID",
+    "Target Forward Dist (m)",
+    "Target Diameter (m)",
     "Distance from Target Line (m)",
-    "Distance from Pin, Carry (m)",
-    "Distance from Pin, Total (m)",
-].extend(default_output_headers)
+    "Carry Distance from Pin (m)",
+    "Total Distance from Pin (m)"
+]
 
 BEGINNING_OF_TIME = pendulum.parse("2011-12-31")
 
@@ -233,6 +247,12 @@ def get_swings(
         "Session Type ID": session_data.SessionTypeID.cdata,
     }
 
+    # Get app specific templates
+    app_dict = {}
+    if "SkillsAssessmentTemplate" in dir(session_data):
+        app_dict = extract_skills_dict(session_data)
+        session_meta.update(app_dict)
+
     # Get Players and Clubs
     player_dict = {}
     club_dict = {}
@@ -249,7 +269,18 @@ def get_swings(
     swings = []
     print(f"Iterating over {len(session_data.GolfSwings.GolfSwing)} swings in session")
     for swing in session_data.GolfSwings.GolfSwing:
-        swings.append(extract_swing(swing, player_dict, club_dict, club_type_dict, ball_dict))
+        swing_data = extract_swing(swing)
+        # Map IDs
+        if len(player_dict) > 0 and swing_data.get("Player ID"):
+            swing_data['Player Name'] = player_dict.get(swing_data['Player ID'], "-")
+        if len(club_type_dict) > 0 and swing_data.get("Club ID"):
+            swing_data['Club Name'] = club_dict.get(swing_data['Club ID'], "-")
+        if len(ball_dict) > 0 and swing_data.get("Ball ID"):
+            swing_data['Ball Name'] = ball_dict.get(swing_data['Ball ID'], "-")
+        if len(app_dict) > 0 and swing_data.get("Target Index"):
+            swing_data.update(app_dict["Targets"].get(swing_data["Target Index"], {}))
+        swings.append(swing_data)
+
     return [session_meta, swings]
 
 
@@ -277,11 +308,7 @@ def write_to_csv(sessions_swings, headers, file):
 
 
 def extract_swing(
-    swing,
-    player_dict=None,
-    club_dict=None,
-    club_type_dict=None,
-    ball_dict=None
+    swing
 ):
     """
     Pull known swing data out of a Swing XML
@@ -310,16 +337,39 @@ def extract_swing(
         print(f"Successfully added swing {swing.SwingIndex.cdata}")
     except AttributeError:
         print("Skipping swing due to malformed data")
-    
-    # Map IDs
-    if player_dict and swing_data.get("Player ID"):
-        swing_data['Player Name'] = player_dict.get(swing_data['Player ID'])
-    if club_type_dict and swing_data.get("Club ID"):
-        swing_data['Club Name'] = club_dict.get(swing_data['Club ID'])
-    if ball_dict and swing_data.get("Ball ID"):
-        swing_data['Ball Name'] = ball_dict.get(swing_data['Ball ID'])
-
     return swing_data
+
+
+def extract_skills_dict(session_data):
+    """
+    Extract template and target data from FS Skills sessions
+    """
+    skills_dict = {}
+    known_keys = fs_skills_dict.keys()
+
+    template = session_data.SkillsAssessmentTemplate
+    skills_dict.update({
+        "Template ID": template.ID.cdata,
+        "Template Name": template.DisplayName.cdata,
+        "Template Created": template.CreateDate.cdata,
+        "Template User Defined": template.UserDef.cdata,
+        "Targets": {}
+    })
+    for target in template.SkillsAssessmentTargets.SkillsAssessmentTarget:
+        target_meta = {
+            "Target Index": target.TargetIndex.cdata,
+            "Target ID": target.ID.cdata,
+            "Target Attempts": target.AttemptsAtTarget.cdata,
+            "Target Shape ID": target.TargetShapeID.cdata,
+        }
+        for param in (
+            target.SkillsAssessmentTargetParameters.SkillsAssessmentTargetParameter
+        ):
+            if param.ParameterName.cdata in known_keys:
+                key = fs_skills_dict[param.ParameterName.cdata]
+                target_meta[key] = param.ParameterValue.cdata
+        skills_dict["Targets"][target_meta["Target Index"]] = target_meta
+    return skills_dict
 
 
 def flightscope_to_csv(
@@ -330,17 +380,37 @@ def flightscope_to_csv(
     headers=None,
     app="ALL"
 ):
-    login_secrets = secrets if login_secrets is None else login_secrets
+    """
+    Download your data from MyFlightscope.com and output to a CSV
+
+    Arguments
+    - login_secrets [Dict] - The secrets you'd like to use for login. Must contain
+        3 keys: username, password, and player_id
+    - start_date [Datetime] - the first date to start pulling sessions from. Defaults
+        to all data.
+    - end_date [Datetime] - the last date to pull sessions from. Defaults to today.
+    - output_file [String] - the file to write the CSV to
+    - headers [List] - a list of data columns to write to the CSV
+    - app [String] - the Flightscope app (FS_GOLF, SKILLS, etc) to pull data
+        for. Defaults to "All"
+    """
+    login_secrets = secrets.login if login_secrets is None else login_secrets
     if output_file is None:
         output_file = f"output/{app}-{pendulum.now().format('YYYY-MM-DD_HH-mm-ss')}.csv"
     headers = default_output_headers if headers is None else headers
 
-    scraper = login(login_secrets.USERNAME, login_secrets.PASSWORD)
-    sessions = get_sessions(scraper, login_secrets.PLAYER_ID, start_date, end_date, app)
+    scraper = login(login_secrets["username"], login_secrets["password"])
+    sessions = get_sessions(
+        scraper,
+        login_secrets["player_id"],
+        start_date,
+        end_date,
+        app
+    )
 
     sessions_swings = []
     for s in sessions:
-        session_swings = get_swings(scraper, s, login_secrets.PLAYER_ID)
+        session_swings = get_swings(scraper, s, login_secrets["player_id"])
         sessions_swings.append(session_swings)
 
     write_to_csv(sessions_swings, headers, output_file)
